@@ -1,13 +1,9 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Alert from '../../components/Alert';
-import { PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
-import ImportData from '../../components/ImportData';
-import ImageCompressor from '../../components/ImageCompressor';
-import { uploadImage } from '../../utils/upload';
 
-interface ProductData {
-  id?: number;
+interface Product {
+  id: number;
   name: string;
   description: string;
   price: number;
@@ -15,16 +11,17 @@ interface ProductData {
 }
 
 export default function ProductManagement() {
+  const [alert, setAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [image, setImage] = useState<File | null>(null);
-  const [editingProduct, setEditingProduct] = useState<ProductData | null>(null);
-  const [alert, setAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  
+
   const queryClient = useQueryClient();
 
-  const { data: products, isLoading } = useQuery<ProductData[]>({
+  // 获取商品列表
+  const { data: products, isLoading } = useQuery<Product[]>({
     queryKey: ['products'],
     queryFn: async () => {
       const response = await fetch('http://localhost:8787/api/products');
@@ -33,54 +30,53 @@ export default function ProductManagement() {
     },
   });
 
+  // 创建商品
   const createProductMutation = useMutation({
-    mutationFn: async (productData: Partial<ProductData>) => {
+    mutationFn: async (productData: FormData) => {
       const response = await fetch('http://localhost:8787/api/products', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
           Authorization: `Bearer ${localStorage.getItem('token')}`,
         },
-        body: JSON.stringify(productData),
+        body: productData,
       });
       if (!response.ok) throw new Error('Failed to create product');
       return response.json();
     },
     onSuccess: () => {
-      // @ts-ignore
-      queryClient.invalidateQueries(['products']);
+      queryClient.invalidateQueries({ queryKey: ['products'] });
       resetForm();
-      setAlert({ type: 'success', message: '产品创建成功！' });
+      setAlert({ type: 'success', message: '商品创建成功！' });
     },
     onError: () => {
-      setAlert({ type: 'error', message: '产品创建失败，请重试。' });
+      setAlert({ type: 'error', message: '商品创建失败，请重试。' });
     },
   });
 
+  // 更新商品
   const updateProductMutation = useMutation({
-    mutationFn: async (product: ProductData) => {
-      const response = await fetch(`http://localhost:8787/api/products/${product.id}`, {
+    mutationFn: async (productData: FormData) => {
+      const response = await fetch(`http://localhost:8787/api/products/${editingProduct?.id}`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
           Authorization: `Bearer ${localStorage.getItem('token')}`,
         },
-        body: JSON.stringify(product),
+        body: productData,
       });
       if (!response.ok) throw new Error('Failed to update product');
       return response.json();
     },
     onSuccess: () => {
-      // @ts-ignore
-      queryClient.invalidateQueries(['products']);
+      queryClient.invalidateQueries({ queryKey: ['products'] });
       resetForm();
-      setAlert({ type: 'success', message: '产品更新成功！' });
+      setAlert({ type: 'success', message: '商品更新成功！' });
     },
     onError: () => {
-      setAlert({ type: 'error', message: '产品更新失败，请重试。' });
+      setAlert({ type: 'error', message: '商品更新失败，请重试。' });
     },
   });
 
+  // 删除商品
   const deleteProductMutation = useMutation({
     mutationFn: async (id: number) => {
       const response = await fetch(`http://localhost:8787/api/products/${id}`, {
@@ -93,12 +89,11 @@ export default function ProductManagement() {
       return response.json();
     },
     onSuccess: () => {
-      // @ts-ignore
-      queryClient.invalidateQueries(['products']);
-      setAlert({ type: 'success', message: '产品删除成功！' });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      setAlert({ type: 'success', message: '商品删除成功！' });
     },
     onError: () => {
-      setAlert({ type: 'error', message: '产品删除失败，请重试。' });
+      setAlert({ type: 'error', message: '商品删除失败，请重试。' });
     },
   });
 
@@ -112,162 +107,129 @@ export default function ProductManagement() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const productData: ProductData = {
-      name,
-      description,
-      price: Number(price),
-      image: image ? await uploadImage(image) : editingProduct?.image || '',
-    };
-
-    try {
-      if (editingProduct?.id) {
-        await updateProductMutation.mutateAsync({ 
-          ...productData, 
-          id: editingProduct.id 
-        });
-      } else {
-        await createProductMutation.mutateAsync(productData);
-      }
-    } catch (error) {
-      setAlert({ type: 'error', message: '操作失败，请重试' });
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('description', description);
+    formData.append('price', price);
+    if (image) {
+      formData.append('image', image);
     }
-  };
 
-  const handleEdit = (product: ProductData) => {
-    setEditingProduct(product);
-    setName(product.name);
-    setDescription(product.description);
-    setPrice(product.price.toString());
-  };
-
-  const handleDelete = async (id: number | undefined) => {
-    if (!id) return;
-    if (window.confirm('确定要删除个商品吗？')) {
-      await deleteProductMutation.mutateAsync(id);
+    if (editingProduct) {
+      await updateProductMutation.mutateAsync(formData);
+    } else {
+      await createProductMutation.mutateAsync(formData);
     }
   };
 
   if (isLoading) return <div>Loading...</div>;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="flex justify-between items-center mb-8">
-        <h2 className="text-2xl font-bold">产品管理</h2>
-        <ImportData
-          endpoint="products"
-          templateUrl="/templates/products-import-template.csv"
-          buttonText="批量导入"
-          onSuccess={() => {
-            // @ts-ignore
-            queryClient.invalidateQueries(['products']);
-            setAlert({ type: 'success', message: '批量导入完成' });
-          }}
-        />
-      </div>
-
+    <div>
       <Alert
         show={!!alert}
         type={alert?.type || 'success'}
         message={alert?.message || ''}
         onClose={() => setAlert(null)}
       />
-      
-      <div className="space-y-8">
-        {/* Form section */}
-        <div className="bg-white shadow sm:rounded-lg p-6">
-          <h2 className="text-lg font-medium mb-6">
-            {editingProduct ? '编辑产品' : '添加新产品'}
-          </h2>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">产名称</label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">描述</label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">价格</label>
-              <input
-                type="number"
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">图片</label>
-              <ImageCompressor
-                onCompress={(compressedFile) => setImage(compressedFile)}
-                maxSizeMB={0.5}
-                maxWidthOrHeight={1200}
-                className="mt-1"
-              />
-            </div>
-            <button
-              type="submit"
-              className="inline-flex justify-center rounded-md border border-transparent bg-indigo-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-            >
-              {editingProduct ? '更新产品' : '添加产品'}
-            </button>
-            {editingProduct && (
-              <button
-                type="button"
-                onClick={resetForm}
-                className="ml-3 inline-flex justify-center rounded-md border border-gray-300 bg-white py-2 px-4 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-              >
-                取消
-              </button>
-            )}
-          </form>
-        </div>
 
-        {/* Products list */}
-        <div className="bg-white shadow sm:rounded-lg">
-          <div className="px-4 py-5 sm:p-6">
-            <h3 className="text-lg font-medium leading-6 text-gray-900 mb-4">现有产品</h3>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {products?.map((product) => (
-                <div key={product.id} className="border rounded-lg p-4">
-                  <img
-                    src={product.image}
-                    alt={product.name}
-                    className="w-full h-48 object-cover rounded-lg"
-                  />
-                  <h4 className="mt-2 text-lg font-medium">{product.name}</h4>
-                  <p className="text-gray-600">{product.description}</p>
-                  <p className="mt-2 text-lg font-bold">¥{product.price}</p>
-                  <div className="mt-4 flex space-x-2">
-                    <button
-                      onClick={() => handleEdit(product)}
-                      className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded text-gray-700 bg-white hover:bg-gray-50"
-                    >
-                      <PencilIcon className="h-4 w-4 mr-1" />
-                      编辑
-                    </button>
-                    <button
-                      onClick={() => handleDelete(product.id)}
-                      className="inline-flex items-center px-3 py-1.5 border border-red-300 shadow-sm text-sm font-medium rounded text-red-700 bg-white hover:bg-red-50"
-                    >
-                      <TrashIcon className="h-4 w-4 mr-1" />
-                      删除
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+      <h2 className="text-2xl font-bold mb-4">
+        {editingProduct ? '编辑商品' : '添加商品'}
+      </h2>
+
+      <form onSubmit={handleSubmit} className="mb-8">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block mb-2">商品名称</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full p-2 border rounded"
+              required
+            />
+          </div>
+          <div>
+            <label className="block mb-2">价格</label>
+            <input
+              type="number"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              className="w-full p-2 border rounded"
+              required
+            />
           </div>
         </div>
+        <div className="mt-4">
+          <label className="block mb-2">描述</label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className="w-full p-2 border rounded"
+            rows={4}
+            required
+          />
+        </div>
+        <div className="mt-4">
+          <label className="block mb-2">图片</label>
+          <input
+            type="file"
+            onChange={(e) => setImage(e.target.files?.[0] || null)}
+            className="w-full p-2 border rounded"
+            accept="image/*"
+          />
+        </div>
+        <div className="mt-4 flex gap-4">
+          <button
+            type="submit"
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          >
+            {editingProduct ? '更新' : '添加'}
+          </button>
+          {editingProduct && (
+            <button
+              type="button"
+              onClick={resetForm}
+              className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+            >
+              取消
+            </button>
+          )}
+        </div>
+      </form>
+
+      <h2 className="text-2xl font-bold mb-4">商品列表</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {products?.map((product) => (
+          <div key={product.id} className="border rounded p-4">
+            <img
+              src={product.image}
+              alt={product.name}
+              className="w-full h-48 object-cover mb-2"
+            />
+            <h3 className="font-bold">{product.name}</h3>
+            <p className="text-gray-600">{product.description}</p>
+            <p className="text-lg font-bold mt-2">¥{product.price}</p>
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={() => setEditingProduct(product)}
+                className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
+              >
+                编辑
+              </button>
+              <button
+                onClick={() => {
+                  if (window.confirm('确定要删除这个商品吗？')) {
+                    deleteProductMutation.mutate(product.id);
+                  }
+                }}
+                className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600"
+              >
+                删除
+              </button>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

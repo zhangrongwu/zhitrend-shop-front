@@ -1,131 +1,90 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { AuthState, LoginCredentials, RegisterData, User } from '../types/auth';
+import { useNavigate, Outlet } from 'react-router-dom';
 
-interface AuthContextType extends AuthState {
-  login: (credentials: LoginCredentials) => Promise<void>;
-  register: (data: RegisterData) => Promise<void>;
-  logout: () => void;
-  updateUser: (user: User) => void;
+interface User {
+  id: number;
+  role: string;
+  email: string;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+interface AuthContextType {
+  user: User | null;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => void;
+  isAdmin: () => boolean;
+}
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [authState, setAuthState] = useState<AuthState>({
-    user: null,
-    token: localStorage.getItem('token'),
-    isAuthenticated: false,
-  });
+const AuthContext = createContext<AuthContextType | null>(null);
+
+export function AuthProvider() {
+  const [user, setUser] = useState<User | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    if (token) {
-      fetchUser(token);
+    const storedUser = localStorage.getItem('user');
+    if (token && storedUser) {
+      setUser(JSON.parse(storedUser));
     }
   }, []);
 
-  const fetchUser = async (token: string) => {
+  const login = async (email: string, password: string) => {
     try {
-      const response = await fetch('http://localhost:8787/api/user/profile', {
+      const response = await fetch('http://localhost:8787/api/auth/login', {
+        method: 'POST',
         headers: {
-          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ email, password }),
       });
-      if (response.ok) {
-        const user = await response.json();
-        setAuthState({
-          user,
-          token,
-          isAuthenticated: true,
-        });
+
+      if (!response.ok) {
+        throw new Error('Login failed');
+      }
+
+      const data = await response.json();
+      const userData = {
+        id: data.id,
+        role: data.role,
+        email: email,
+      };
+
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(userData));
+      setUser(userData);
+
+      if (data.role === 'admin') {
+        navigate('/admin/products');
       } else {
-        logout();
+        navigate('/');
       }
     } catch (error) {
-      logout();
+      console.error('Login error:', error);
+      throw error;
     }
-  };
-
-  const login = async (credentials: LoginCredentials) => {
-    const response = await fetch('http://localhost:8787/api/auth/login', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(credentials),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Login failed');
-    }
-
-    const { token, user } = await response.json();
-    localStorage.setItem('token', token);
-    setAuthState({
-      user,
-      token,
-      isAuthenticated: true,
-    });
-  };
-
-  const register = async (data: RegisterData) => {
-    const response = await fetch('http://localhost:8787/api/auth/register', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(data),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Registration failed');
-    }
-
-    const { token, user } = await response.json();
-    localStorage.setItem('token', token);
-    setAuthState({
-      user,
-      token,
-      isAuthenticated: true,
-    });
   };
 
   const logout = () => {
     localStorage.removeItem('token');
-    setAuthState({
-      user: null,
-      token: null,
-      isAuthenticated: false,
-    });
+    localStorage.removeItem('user');
+    setUser(null);
+    navigate('/');
   };
 
-  const updateUser = (user: User) => {
-    setAuthState(prev => ({
-      ...prev,
-      user,
-    }));
+  const isAdmin = () => {
+    return user?.role === 'admin';
   };
 
   return (
-    <AuthContext.Provider
-      value={{
-        ...authState,
-        login,
-        register,
-        logout,
-        updateUser,
-      }}
-    >
-      {children}
+    <AuthContext.Provider value={{ user, login, logout, isAdmin }}>
+      <Outlet />
     </AuthContext.Provider>
   );
 }
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (context === undefined) {
+  if (!context) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
