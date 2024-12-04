@@ -1,179 +1,220 @@
-import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { ChartBarIcon, ArrowTrendingUpIcon, CurrencyYenIcon } from '@heroicons/react/24/outline';
+import { useQuery } from '@tanstack/react-query';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+} from 'chart.js';
+import { Bar } from 'react-chartjs-2';
+import Alert from '../../components/Alert';
+
+// 注册 ChartJS 组件
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend
+);
 
 interface SalesData {
-  daily: {
+  totalSales: number;
+  totalOrders: number;
+  averageOrderValue: number;
+  salesGrowth: string;
+  userGrowth: string;
+  orderGrowth: string;
+  dailySales: Array<{
     date: string;
-    sales: number;
     orders: number;
-  }[];
-  monthly: {
-    month: string;
     sales: number;
-    orders: number;
-  }[];
-  categoryStats: {
+  }>;
+  categorySales: Array<{
     category: string;
+    orders: number;
     sales: number;
-    percentage: number;
-  }[];
-  topSellingProducts: {
+  }>;
+  topProducts: Array<{
     id: number;
     name: string;
+    quantity: number;
     sales: number;
-    revenue: number;
-  }[];
+  }>;
 }
 
 export default function SalesReport() {
-  const [timeRange, setTimeRange] = useState<'7days' | '30days' | '12months'>('30days');
+  const [alert, setAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [dateRange, setDateRange] = useState({
+    start_date: new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString().split('T')[0],
+    end_date: new Date().toISOString().split('T')[0],
+  });
 
   const { data: salesData, isLoading } = useQuery<SalesData>({
-    queryKey: ['sales-report', timeRange],
+    queryKey: ['sales-report', dateRange],
     queryFn: async () => {
-      const response = await fetch(`http://localhost:8787/api/admin/sales-report?range=${timeRange}`, {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
-        },
-      });
-      if (!response.ok) throw new Error('Failed to fetch sales report');
+      const response = await fetch(
+        `http://localhost:8787/api/admin/reports/sales-report?start_date=${dateRange.start_date}&end_date=${dateRange.end_date}`,
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('token')}`,
+          },
+        }
+      );
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '获取销售报表失败');
+      }
       return response.json();
     },
   });
 
-  if (isLoading) return <div>Loading...</div>;
+  const chartData = {
+    labels: salesData?.dailySales.map(item => item.date) || [],
+    datasets: [
+      {
+        label: '销售额',
+        data: salesData?.dailySales.map(item => item.sales) || [],
+        backgroundColor: 'rgba(99, 102, 241, 0.5)',
+      },
+    ],
+  };
 
-  const averageOrderValue = salesData?.daily.length ? (
-    Math.round(
-      salesData.daily.reduce((sum, day) => sum + day.sales, 0) /
-      salesData.daily.reduce((sum, day) => sum + day.orders, 0)
-    ).toLocaleString()
-  ) : '0';
+  const chartOptions = {
+    responsive: true,
+    plugins: {
+      legend: {
+        position: 'top' as const,
+      },
+      title: {
+        display: true,
+        text: '每日销售趋势',
+      },
+    },
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
+      </div>
+    );
+  }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="flex justify-between items-center mb-8">
-        <h2 className="text-2xl font-bold">销售报表</h2>
-        <select
-          value={timeRange}
-          onChange={(e) => setTimeRange(e.target.value as typeof timeRange)}
-          className="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-        >
-          <option value="7days">最近7天</option>
-          <option value="30days">最近30天</option>
-          <option value="12months">最近12个月</option>
-        </select>
+    <div className="space-y-6">
+      <Alert
+        show={!!alert}
+        type={alert?.type || 'success'}
+        message={alert?.message || ''}
+        onClose={() => setAlert(null)}
+      />
+
+      {/* 页面标题 */}
+      <div className="sm:flex sm:items-center">
+        <div className="sm:flex-auto">
+          <h1 className="text-xl font-semibold text-gray-900">销售报表</h1>
+          <p className="mt-2 text-sm text-gray-700">
+            查看销售数据统计和趋势分析。
+          </p>
+        </div>
+        <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
+          <div className="flex space-x-4">
+            <input
+              type="date"
+              value={dateRange.start_date}
+              onChange={(e) => setDateRange(prev => ({ ...prev, start_date: e.target.value }))}
+              className="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+            />
+            <input
+              type="date"
+              value={dateRange.end_date}
+              onChange={(e) => setDateRange(prev => ({ ...prev, end_date: e.target.value }))}
+              className="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* 统计卡片 */}
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="bg-white overflow-hidden shadow rounded-lg">
+          <div className="p-5">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <div className="rounded-md bg-indigo-500 p-3">
+                  {/* Icon */}
+                </div>
+              </div>
+              <div className="ml-5 w-0 flex-1">
+                <dl>
+                  <dt className="text-sm font-medium text-gray-500 truncate">
+                    总销售额
+                  </dt>
+                  <dd className="flex items-baseline">
+                    <div className="text-2xl font-semibold text-gray-900">
+                      ¥{salesData?.totalSales.toLocaleString()}
+                    </div>
+                    <div className="ml-2 flex items-baseline text-sm font-semibold text-green-600">
+                      {salesData?.salesGrowth}
+                    </div>
+                  </dd>
+                </dl>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 其他统计卡片 */}
       </div>
 
       {/* 销售趋势图表 */}
-      <div className="bg-white shadow rounded-lg p-6 mb-8">
-        <h3 className="text-lg font-medium mb-4">销售趋势</h3>
-        <div className="h-64">
-          {/* 这里可以使用图表库如 Chart.js 或 Recharts 来展示趋势图 */}
-          <div className="flex items-center justify-center h-full text-gray-500">
-            图表区域
-          </div>
-        </div>
+      <div className="bg-white shadow rounded-lg p-6">
+        <Bar options={chartOptions} data={chartData} />
       </div>
 
-      {/* 分类销售统计 */}
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-        <div className="bg-white shadow rounded-lg p-6">
-          <h3 className="text-lg font-medium mb-4">分类销售占比</h3>
-          <div className="space-y-4">
-            {salesData?.categoryStats.map((category) => (
-              <div key={category.category}>
-                <div className="flex justify-between text-sm font-medium">
-                  <span>{category.category}</span>
-                  <span>¥{category.sales.toLocaleString()}</span>
-                </div>
-                <div className="mt-1 relative pt-1">
-                  <div className="overflow-hidden h-2 text-xs flex rounded bg-gray-200">
-                    <div
-                      style={{ width: `${category.percentage}%` }}
-                      className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-indigo-500"
-                    />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+      {/* 热销商品列表 */}
+      <div className="bg-white shadow rounded-lg overflow-hidden">
+        <div className="px-4 py-5 sm:px-6">
+          <h3 className="text-lg leading-6 font-medium text-gray-900">
+            热销商品
+          </h3>
         </div>
-
-        {/* 热销商品 */}
-        <div className="bg-white shadow rounded-lg p-6">
-          <h3 className="text-lg font-medium mb-4">热销商品</h3>
-          <div className="space-y-4">
-            {salesData?.topSellingProducts.map((product) => (
-              <div key={product.id} className="flex items-center justify-between">
-                <div className="flex-1">
-                  <h4 className="text-sm font-medium">{product.name}</h4>
-                  <p className="text-sm text-gray-500">销量: {product.sales}</p>
-                </div>
-                <div className="text-sm font-medium text-gray-900">
-                  ¥{product.revenue.toLocaleString()}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* 销售指标 */}
-      <div className="grid grid-cols-1 gap-5 mt-8 sm:grid-cols-2 lg:grid-cols-3">
-        <div className="bg-white overflow-hidden shadow rounded-lg">
-          <div className="p-5">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <ChartBarIcon className="h-6 w-6 text-gray-400" />
-              </div>
-              <div className="ml-5 w-0 flex-1">
-                <dl>
-                  <dt className="text-sm font-medium text-gray-500 truncate">总订单数</dt>
-                  <dd className="text-lg font-medium text-gray-900">
-                    {salesData?.daily.reduce((sum, day) => sum + day.orders, 0)}
-                  </dd>
-                </dl>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white overflow-hidden shadow rounded-lg">
-          <div className="p-5">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <CurrencyYenIcon className="h-6 w-6 text-gray-400" />
-              </div>
-              <div className="ml-5 w-0 flex-1">
-                <dl>
-                  <dt className="text-sm font-medium text-gray-500 truncate">总销售额</dt>
-                  <dd className="text-lg font-medium text-gray-900">
-                    ¥{salesData?.daily.reduce((sum, day) => sum + day.sales, 0).toLocaleString()}
-                  </dd>
-                </dl>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white overflow-hidden shadow rounded-lg">
-          <div className="p-5">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <ArrowTrendingUpIcon className="h-6 w-6 text-gray-400" />
-              </div>
-              <div className="ml-5 w-0 flex-1">
-                <dl>
-                  <dt className="text-sm font-medium text-gray-500 truncate">平均客单价</dt>
-                  <dd className="text-lg font-medium text-gray-900">
-                    ¥{averageOrderValue}
-                  </dd>
-                </dl>
-              </div>
-            </div>
-          </div>
+        <div className="border-t border-gray-200">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  商品名称
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  销量
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  销售额
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {salesData?.topProducts.map((product) => (
+                <tr key={product.id}>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    {product.name}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {product.quantity}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    ¥{product.sales.toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

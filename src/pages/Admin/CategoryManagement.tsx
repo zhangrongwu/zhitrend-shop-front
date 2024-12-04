@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { PlusIcon } from '@heroicons/react/24/outline';
 import Alert from '../../components/Alert';
+import Modal from '../../components/Modal';
 
 interface Category {
   id: number;
@@ -10,6 +12,7 @@ interface Category {
 }
 
 export default function CategoryManagement() {
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [alert, setAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [name, setName] = useState('');
@@ -22,107 +25,98 @@ export default function CategoryManagement() {
   const { data: categories, isLoading } = useQuery<Category[]>({
     queryKey: ['categories'],
     queryFn: async () => {
-      const response = await fetch('http://localhost:8787/api/categories');
-      if (!response.ok) throw new Error('Failed to fetch categories');
+      const response = await fetch('http://localhost:8787/api/admin/categories', {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+        },
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '获取分类列表失败');
+      }
       return response.json();
     },
   });
 
-  // 创建分类
-  const createCategoryMutation = useMutation({
+  // 创建/更新分类
+  const categoryMutation = useMutation({
     mutationFn: async (data: Partial<Category>) => {
-      const response = await fetch('http://localhost:8787/api/categories', {
-        method: 'POST',
+      const url = editingCategory 
+        ? `http://localhost:8787/api/admin/categories/${editingCategory.id}`
+        : 'http://localhost:8787/api/admin/categories';
+      
+      const response = await fetch(url, {
+        method: editingCategory ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${localStorage.getItem('token')}`,
         },
         body: JSON.stringify(data),
       });
-      if (!response.ok) throw new Error('Failed to create category');
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '操作失败');
+      }
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['categories'] });
       resetForm();
-      setAlert({ type: 'success', message: '分类创建成功！' });
-    },
-    onError: () => {
-      setAlert({ type: 'error', message: '分类创建失败，请重试。' });
-    },
-  });
-
-  // 更新分类
-  const updateCategoryMutation = useMutation({
-    mutationFn: async (data: Category) => {
-      const response = await fetch(`http://localhost:8787/api/categories/${data.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
-        },
-        body: JSON.stringify(data),
+      setAlert({
+        type: 'success',
+        message: `分类${editingCategory ? '更新' : '创建'}成功`,
       });
-      if (!response.ok) throw new Error('Failed to update category');
-      return response.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['categories'] });
-      resetForm();
-      setAlert({ type: 'success', message: '分类更新成功！' });
-    },
-    onError: () => {
-      setAlert({ type: 'error', message: '分类更新失败，请重试。' });
+    onError: (error: Error) => {
+      setAlert({
+        type: 'error',
+        message: error.message,
+      });
     },
   });
 
   // 删除分类
-  const deleteCategoryMutation = useMutation({
+  const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      const response = await fetch(`http://localhost:8787/api/categories/${id}`, {
+      const response = await fetch(`http://localhost:8787/api/admin/categories/${id}`, {
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${localStorage.getItem('token')}`,
         },
       });
-      if (!response.ok) throw new Error('Failed to delete category');
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '删除失败');
+      }
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['categories'] });
-      setAlert({ type: 'success', message: '分类删除成功！' });
+      setAlert({
+        type: 'success',
+        message: '分类删除成功',
+      });
     },
-    onError: () => {
-      setAlert({ type: 'error', message: '分类删除失败，请重试。' });
+    onError: (error: Error) => {
+      setAlert({
+        type: 'error',
+        message: error.message,
+      });
     },
   });
 
   const resetForm = () => {
+    setEditingCategory(null);
     setName('');
     setDescription('');
     setParentId('');
-    setEditingCategory(null);
+    setIsModalOpen(false);
   };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const data = {
-      name,
-      description,
-      parent_id: parentId ? Number(parentId) : undefined,
-    };
-
-    if (editingCategory) {
-      await updateCategoryMutation.mutateAsync({ ...data, id: editingCategory.id });
-    } else {
-      await createCategoryMutation.mutateAsync(data);
-    }
-  };
-
-  if (isLoading) return <div>Loading...</div>;
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="space-y-6">
       <Alert
         show={!!alert}
         type={alert?.type || 'success'}
@@ -130,111 +124,171 @@ export default function CategoryManagement() {
         onClose={() => setAlert(null)}
       />
 
-      <div className="mb-8">
-        <h2 className="text-2xl font-bold mb-4">
-          {editingCategory ? '编辑分类' : '添加分类'}
-        </h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
+      {/* 页面标题和添加按钮 */}
+      <div className="sm:flex sm:items-center">
+        <div className="sm:flex-auto">
+          <h1 className="text-xl font-semibold text-gray-900">分类管理</h1>
+          <p className="mt-2 text-sm text-gray-700">
+            管理商品分类，支持多级分类结构。
+          </p>
+        </div>
+        <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
+          <button
+            type="button"
+            onClick={() => {
+              setEditingCategory(null);
+              setIsModalOpen(true);
+            }}
+            className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+          >
+            <PlusIcon className="-ml-0.5 mr-1.5 h-5 w-5" aria-hidden="true" />
+            添加分类
+          </button>
+        </div>
+      </div>
+
+      {/* 分类列表 */}
+      <div className="bg-white shadow rounded-lg overflow-hidden">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                名称
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                描述
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                父分类
+              </th>
+              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                操作
+              </th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {categories?.map((category) => (
+              <tr key={category.id} className="hover:bg-gray-50">
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {category.name}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {category.description || '-'}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {categories?.find(c => c.id === category.parent_id)?.name || '-'}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                  <button
+                    onClick={() => {
+                      setEditingCategory(category);
+                      setName(category.name);
+                      setDescription(category.description || '');
+                      setParentId(category.parent_id?.toString() || '');
+                      setIsModalOpen(true);
+                    }}
+                    className="text-indigo-600 hover:text-indigo-900 mr-4"
+                  >
+                    编辑
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (window.confirm('确定要删除这个分类吗？')) {
+                        deleteMutation.mutate(category.id);
+                      }
+                    }}
+                    className="text-red-600 hover:text-red-900"
+                  >
+                    删除
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* 分类表单弹窗 */}
+      <Modal
+        open={isModalOpen}
+        title={editingCategory ? '编辑分类' : '添加分类'}
+        onClose={() => setIsModalOpen(false)}
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            categoryMutation.mutate({
+              name,
+              description,
+              parent_id: parentId ? Number(parentId) : null,
+            });
+          }}
+          className="space-y-4"
+        >
           <div>
-            <label className="block mb-2">分类名称</label>
+            <label className="block text-sm font-medium text-gray-700">
+              分类名称
+            </label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full p-2 border rounded"
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
               required
             />
           </div>
+
           <div>
-            <label className="block mb-2">描述</label>
+            <label className="block text-sm font-medium text-gray-700">
+              描述
+            </label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full p-2 border rounded"
               rows={3}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
             />
           </div>
+
           <div>
-            <label className="block mb-2">父分类</label>
+            <label className="block text-sm font-medium text-gray-700">
+              父分类
+            </label>
             <select
               value={parentId}
               onChange={(e) => setParentId(e.target.value)}
-              className="w-full p-2 border rounded"
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
             >
               <option value="">无</option>
               {categories?.map((category) => (
-                <option key={category.id} value={category.id}>
+                <option
+                  key={category.id}
+                  value={category.id}
+                  disabled={category.id === editingCategory?.id}
+                >
                   {category.name}
                 </option>
               ))}
             </select>
           </div>
-          <div className="flex gap-4">
+
+          <div className="mt-5 sm:mt-6 sm:grid sm:grid-flow-row-dense sm:grid-cols-2 sm:gap-3">
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              className="inline-flex w-full justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 sm:col-start-2"
             >
               {editingCategory ? '更新' : '添加'}
             </button>
-            {editingCategory && (
-              <button
-                type="button"
-                onClick={resetForm}
-                className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
-              >
-                取消
-              </button>
-            )}
+            <button
+              type="button"
+              className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:col-start-1 sm:mt-0"
+              onClick={resetForm}
+            >
+              取消
+            </button>
           </div>
         </form>
-      </div>
-
-      <div>
-        <h2 className="text-2xl font-bold mb-4">分类列表</h2>
-        <div className="space-y-4">
-          {categories?.map((category) => (
-            <div
-              key={category.id}
-              className="border rounded p-4 flex justify-between items-center"
-            >
-              <div>
-                <h3 className="font-bold">{category.name}</h3>
-                {category.description && (
-                  <p className="text-gray-600">{category.description}</p>
-                )}
-                {category.parent_id && (
-                  <p className="text-sm text-gray-500">
-                    父分类: {categories.find(c => c.id === category.parent_id)?.name}
-                  </p>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    setEditingCategory(category);
-                    setName(category.name);
-                    setDescription(category.description || '');
-                    setParentId(category.parent_id?.toString() || '');
-                  }}
-                  className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
-                >
-                  编辑
-                </button>
-                <button
-                  onClick={() => {
-                    if (window.confirm('确定要删除这个分类吗？')) {
-                      deleteCategoryMutation.mutate(category.id);
-                    }
-                  }}
-                  className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600"
-                >
-                  删除
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      </Modal>
     </div>
   );
 } 

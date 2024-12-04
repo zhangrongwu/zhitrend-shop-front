@@ -1,6 +1,7 @@
 export default {
   common: {
     loading: '加载中...',
+    success: '操作成功',
     error: '错误',
     retry: '重试',
     save: '保存',

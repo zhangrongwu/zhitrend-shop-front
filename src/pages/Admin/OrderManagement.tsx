@@ -1,28 +1,22 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import Alert from '../../components/Alert';
 import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { EyeIcon, TruckIcon, XCircleIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import Alert from '../../components/Alert';
+import Modal from '../../components/Modal';
 
 interface Order {
   id: number;
   user_id: number;
   total_amount: number;
   status: string;
-  shipping_address: string;
-  contact_phone: string;
   created_at: string;
-  items: string;
+  user_name: string;
 }
-
-const statusMap = {
-  pending: '待付款',
-  paid: '已付款',
-  shipped: '已发货',
-  completed: '已完成',
-  cancelled: '已取消',
-};
 
 export default function OrderManagement() {
   const [alert, setAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: orders, isLoading } = useQuery<Order[]>({
@@ -33,14 +27,18 @@ export default function OrderManagement() {
           Authorization: `Bearer ${localStorage.getItem('token')}`,
         },
       });
-      if (!response.ok) throw new Error('Failed to fetch orders');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '获取订单列表失败');
+      }
       return response.json();
     },
   });
 
-  const updateStatusMutation = useMutation({
-    mutationFn: async ({ orderId, status }: { orderId: number; status: string }) => {
-      const response = await fetch(`http://localhost:8787/api/orders/${orderId}/status`, {
+  // 更新订单状态
+  const updateOrderMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: string }) => {
+      const response = await fetch(`http://localhost:8787/api/admin/orders/${id}/status`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -48,28 +46,42 @@ export default function OrderManagement() {
         },
         body: JSON.stringify({ status }),
       });
-      if (!response.ok) throw new Error('Failed to update order status');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '更新订单状态失败');
+      }
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ 
-        queryKey: ['admin-orders'] 
-      });
-      setAlert({ type: 'success', message: '订单状态更新成功！' });
+      queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+      setAlert({ type: 'success', message: '订单状态更新成功' });
     },
-    onError: () => {
-      setAlert({ type: 'error', message: '更新失败，请重试。' });
+    onError: (error: Error) => {
+      setAlert({ type: 'error', message: error.message });
     },
   });
 
-  const handleStatusChange = async (orderId: number, status: string) => {
-    await updateStatusMutation.mutateAsync({ orderId, status });
+  const getStatusBadge = (status: string) => {
+    const statusMap: Record<string, { color: string; text: string }> = {
+      pending: { color: 'bg-yellow-100 text-yellow-800', text: '待付款' },
+      paid: { color: 'bg-green-100 text-green-800', text: '已付款' },
+      shipped: { color: 'bg-blue-100 text-blue-800', text: '已发货' },
+      delivered: { color: 'bg-purple-100 text-purple-800', text: '已送达' },
+      cancelled: { color: 'bg-red-100 text-red-800', text: '已取消' },
+    };
+    return statusMap[status] || { color: 'bg-gray-100 text-gray-800', text: status };
   };
 
-  if (isLoading) return <div>Loading...</div>;
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
+      </div>
+    );
+  }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="space-y-6">
       <Alert
         show={!!alert}
         type={alert?.type || 'success'}
@@ -77,9 +89,18 @@ export default function OrderManagement() {
         onClose={() => setAlert(null)}
       />
 
-      <h2 className="text-2xl font-bold mb-6">订单管理</h2>
+      {/* 页面标题 */}
+      <div className="sm:flex sm:items-center">
+        <div className="sm:flex-auto">
+          <h1 className="text-xl font-semibold text-gray-900">订单管理</h1>
+          <p className="mt-2 text-sm text-gray-700">
+            查看和管理所有订单，包括订单状态更新和详细信息查看。
+          </p>
+        </div>
+      </div>
 
-      <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+      {/* 订单列表 */}
+      <div className="bg-white shadow rounded-lg overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
@@ -87,58 +108,108 @@ export default function OrderManagement() {
                 订单号
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                状态
+                客户
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 金额
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                收货信息
+                状态
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                下单时间
+              </th>
+              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                 操作
               </th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {orders?.map((order) => (
-              <tr key={order.id}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  {order.id}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {statusMap[order.status as keyof typeof statusMap]}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  ¥{order.total_amount}
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-500">
-                  <div>{order.shipping_address}</div>
-                  <div>{order.contact_phone}</div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {order.status === 'paid' && (
+            {orders?.map((order) => {
+              const { color, text } = getStatusBadge(order.status);
+              return (
+                <tr key={order.id}>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {order.id}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {order.user_name}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    ¥{order.total_amount.toFixed(2)}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${color}`}>
+                      {text}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {new Date(order.created_at).toLocaleString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <button
-                      onClick={() => handleStatusChange(order.id, 'shipped')}
-                      className="text-indigo-600 hover:text-indigo-900"
+                      onClick={() => {
+                        setSelectedOrder(order);
+                        setIsModalOpen(true);
+                      }}
+                      className="text-indigo-600 hover:text-indigo-900 mr-4"
                     >
-                      发货
+                      <EyeIcon className="h-5 w-5" />
                     </button>
-                  )}
-                  {order.status === 'pending' && (
-                    <button
-                      onClick={() => handleStatusChange(order.id, 'cancelled')}
-                      className="text-red-600 hover:text-red-900"
-                    >
-                      取消订单
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
+                    {order.status === 'paid' && (
+                      <button
+                        onClick={() => updateOrderMutation.mutate({ id: order.id, status: 'shipped' })}
+                        className="text-blue-600 hover:text-blue-900"
+                      >
+                        <TruckIcon className="h-5 w-5" />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
+
+      {/* 订单详情弹窗 */}
+      <Modal
+        open={isModalOpen}
+        title="订单详情"
+        onClose={() => {
+          setIsModalOpen(false);
+          setSelectedOrder(null);
+        }}
+      >
+        {selectedOrder && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">订单号</label>
+                <p className="mt-1 text-sm text-gray-900">{selectedOrder.id}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">客户</label>
+                <p className="mt-1 text-sm text-gray-900">{selectedOrder.user_name}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">金额</label>
+                <p className="mt-1 text-sm text-gray-900">¥{selectedOrder.total_amount.toFixed(2)}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">状态</label>
+                <p className="mt-1 text-sm text-gray-900">{getStatusBadge(selectedOrder.status).text}</p>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700">下单时间</label>
+                <p className="mt-1 text-sm text-gray-900">
+                  {new Date(selectedOrder.created_at).toLocaleString()}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 } 

@@ -1,61 +1,63 @@
 import { Outlet, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import {
+  HomeIcon,
+  CubeIcon,
+  TagIcon,
+  ShoppingBagIcon,
+  UserGroupIcon,
+  ChartBarIcon,
+} from '@heroicons/react/24/outline';
+
+const navigation = [
+  { name: '仪表板', href: '/admin', icon: HomeIcon },
+  { name: '商品管理', href: '/admin/products', icon: CubeIcon },
+  { name: '分类管理', href: '/admin/categories', icon: TagIcon },
+  { name: '订单管理', href: '/admin/orders', icon: ShoppingBagIcon },
+  { name: '用户管理', href: '/admin/users', icon: UserGroupIcon },
+  { name: '销售报表', href: '/admin/reports', icon: ChartBarIcon },
+];
 
 export default function AdminLayout() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
-  // 如果不是管理员，重定向到首页
+  // 检查是否是管理员
   if (!user || user.role !== 'admin') {
-    navigate('/');
+    navigate('/login');
     return null;
   }
 
   return (
-    <div className="flex h-screen bg-gray-100">
-      {/* 侧边栏 */}
-      <div className="w-64 bg-white shadow-lg">
-        <div className="p-4">
-          <h2 className="text-xl font-bold">管理后台</h2>
-        </div>
-        <nav className="mt-4">
-          <Link to="/admin/products" className="block px-4 py-2 hover:bg-gray-100">
-            商品管理
-          </Link>
-          <Link to="/admin/categories" className="block px-4 py-2 hover:bg-gray-100">
-            分类管理
-          </Link>
-          <Link to="/admin/orders" className="block px-4 py-2 hover:bg-gray-100">
-            订单管理
-          </Link>
-          <Link to="/admin/users" className="block px-4 py-2 hover:bg-gray-100">
-            用户管理
-          </Link>
-          <Link to="/admin/reports" className="block px-4 py-2 hover:bg-gray-100">
-            销售报表
-          </Link>
-        </nav>
-      </div>
-
-      {/* 主内容区 */}
-      <div className="flex-1 overflow-auto">
-        <header className="bg-white shadow">
-          <div className="px-4 py-6">
-            <div className="flex justify-between items-center">
-              <h1 className="text-2xl font-bold">后台管理</h1>
-              <button
-                onClick={logout}
-                className="px-4 py-2 text-sm text-red-600 hover:text-red-800"
-              >
-                退出登录
-              </button>
+    <div className="min-h-screen bg-gray-100">
+      <div className="flex">
+        {/* 侧边栏 */}
+        <div className="w-64 bg-gray-800 min-h-screen fixed">
+          <div className="flex flex-col h-full">
+            <div className="flex items-center justify-center h-16 px-4">
+              <span className="text-xl font-bold text-white">管理后台</span>
             </div>
+            <nav className="mt-5 flex-1 px-2 space-y-1">
+              {navigation.map((item) => (
+                <Link
+                  key={item.name}
+                  to={item.href}
+                  className="group flex items-center px-2 py-2 text-sm font-medium rounded-md text-gray-300 hover:bg-gray-700 hover:text-white"
+                >
+                  <item.icon className="mr-3 h-6 w-6" />
+                  {item.name}
+                </Link>
+              ))}
+            </nav>
           </div>
-        </header>
+        </div>
 
-        <main className="p-6">
-          <Outlet />
-        </main>
+        {/* 主内容区 */}
+        <div className="flex-1 ml-64">
+          <main className="p-6">
+            <Outlet />
+          </main>
+        </div>
       </div>
     </div>
   );
