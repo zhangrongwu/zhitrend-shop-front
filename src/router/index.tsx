@@ -1,4 +1,4 @@
-import { createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, Outlet } from 'react-router-dom';
 import { AuthProvider } from '../contexts/AuthContext';
 import Layout from '../layouts/Layout';
 import AdminLayout from '../layouts/AdminLayout';
@@ -19,6 +19,7 @@ import OrderManagement from '../pages/Admin/OrderManagement';
 import UserManagement from '../pages/Admin/UserManagement';
 import SalesReport from '../pages/Admin/SalesReport';
 import CategoryManagement from '../pages/Admin/CategoryManagement';
+import Settings from '../pages/Admin/Settings';
 
 import ErrorBoundary from '../components/ErrorBoundary';
 
@@ -44,7 +45,11 @@ export const router = createBrowserRouter([
       },
       {
         path: '/admin',
-        element: <AdminLayout />,
+        element: (
+          <AdminLayout>
+            <Outlet />
+          </AdminLayout>
+        ),
         children: [
           { index: true, element: <Dashboard /> },
           { path: 'products', element: <ProductManagement /> },
@@ -52,6 +57,7 @@ export const router = createBrowserRouter([
           { path: 'orders', element: <OrderManagement /> },
           { path: 'users', element: <UserManagement /> },
           { path: 'reports', element: <SalesReport /> },
+          { path: 'settings', element: <Settings /> },
         ],
       },
     ],

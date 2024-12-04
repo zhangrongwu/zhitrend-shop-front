@@ -12,12 +12,24 @@ interface Category {
 }
 
 export default function CategoryManagement() {
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalState, setModalState] = useState<{
+    isOpen: boolean;
+    editingCategory: Category | null;
+    formData: {
+      name: string;
+      description: string;
+      parent_id: string;
+    };
+  }>({
+    isOpen: false,
+    editingCategory: null,
+    formData: {
+      name: '',
+      description: '',
+      parent_id: '',
+    },
+  });
   const [alert, setAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [parentId, setParentId] = useState<string>('');
 
   const queryClient = useQueryClient();
 
@@ -41,17 +53,24 @@ export default function CategoryManagement() {
   // 创建/更新分类
   const categoryMutation = useMutation({
     mutationFn: async (data: Partial<Category>) => {
-      const url = editingCategory 
-        ? `http://localhost:8787/api/admin/categories/${editingCategory.id}`
+      // 准备要发送的数据，处理可能的 undefined 值
+      const payload = {
+        name: data.name?.trim(),
+        description: data.description?.trim() || null, // 使用 null 而不是 undefined
+        parent_id: data.parent_id ? parseInt(data.parent_id.toString()) : null, // 转换为数字或 null
+      };
+
+      const url = modalState.editingCategory 
+        ? `http://localhost:8787/api/admin/categories/${modalState.editingCategory.id}`
         : 'http://localhost:8787/api/admin/categories';
       
       const response = await fetch(url, {
-        method: editingCategory ? 'PUT' : 'POST',
+        method: modalState.editingCategory ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${localStorage.getItem('token')}`,
         },
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       });
       
       if (!response.ok) {
@@ -62,16 +81,25 @@ export default function CategoryManagement() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['categories'] });
-      resetForm();
+      setModalState(prev => ({
+        ...prev,
+        isOpen: false,
+        editingCategory: null,
+        formData: {
+          name: '',
+          description: '',
+          parent_id: '',
+        },
+      }));
       setAlert({
         type: 'success',
-        message: `分类${editingCategory ? '更新' : '创建'}成功`,
+        message: `分类${modalState.editingCategory ? '更新' : '创建'}成功`,
       });
     },
     onError: (error: Error) => {
       setAlert({
         type: 'error',
-        message: error.message,
+        message: error.message || `分类${modalState.editingCategory ? '更新' : '创建'}失败`,
       });
     },
   });
@@ -107,12 +135,51 @@ export default function CategoryManagement() {
     },
   });
 
-  const resetForm = () => {
-    setEditingCategory(null);
-    setName('');
-    setDescription('');
-    setParentId('');
-    setIsModalOpen(false);
+  // 处理表单提交
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    try {
+      // 验证表单数据
+      const name = modalState.formData.name.trim();
+      if (!name) {
+        setAlert({
+          type: 'error',
+          message: '请输入分类名称',
+        });
+        return;
+      }
+
+      // 准备提交的数据，确保所有字段都有明确的值
+      const submitData = {
+        name,
+        description: modalState.formData.description?.trim() || null,
+        parent_id: modalState.formData.parent_id ? Number(modalState.formData.parent_id) : null,
+      };
+
+      console.log('Submitting data:', submitData); // 添加日志
+
+      await categoryMutation.mutateAsync(submitData);
+    } catch (error) {
+      console.error('Error submitting form:', error);
+      setAlert({
+        type: 'error',
+        message: error instanceof Error ? error.message : '提交失败，请重试',
+      });
+    }
+  };
+
+  // 处理输入变化
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setModalState(prev => ({
+      ...prev,
+      formData: {
+        ...prev.formData,
+        [name]: value,
+      },
+    }));
   };
 
   return (
@@ -136,8 +203,16 @@ export default function CategoryManagement() {
           <button
             type="button"
             onClick={() => {
-              setEditingCategory(null);
-              setIsModalOpen(true);
+              setModalState(prev => ({
+                ...prev,
+                isOpen: true,
+                editingCategory: null,
+                formData: {
+                  name: '',
+                  description: '',
+                  parent_id: '',
+                },
+              }));
             }}
             className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
           >
@@ -181,11 +256,16 @@ export default function CategoryManagement() {
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   <button
                     onClick={() => {
-                      setEditingCategory(category);
-                      setName(category.name);
-                      setDescription(category.description || '');
-                      setParentId(category.parent_id?.toString() || '');
-                      setIsModalOpen(true);
+                      setModalState(prev => ({
+                        ...prev,
+                        isOpen: true,
+                        editingCategory: category,
+                        formData: {
+                          name: category.name,
+                          description: category.description || '',
+                          parent_id: category.parent_id?.toString() || '',
+                        },
+                      }));
                     }}
                     className="text-indigo-600 hover:text-indigo-900 mr-4"
                   >
@@ -210,29 +290,31 @@ export default function CategoryManagement() {
 
       {/* 分类表单弹窗 */}
       <Modal
-        open={isModalOpen}
-        title={editingCategory ? '编辑分类' : '添加分类'}
-        onClose={() => setIsModalOpen(false)}
+        open={modalState.isOpen}
+        title={modalState.editingCategory ? '编辑分类' : '添加分类'}
+        onClose={() => {
+          setModalState(prev => ({
+            ...prev,
+            isOpen: false,
+            editingCategory: null,
+            formData: {
+              name: '',
+              description: '',
+              parent_id: '',
+            },
+          }));
+        }}
       >
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            categoryMutation.mutate({
-              name,
-              description,
-              parent_id: parentId ? Number(parentId) : null,
-            });
-          }}
-          className="space-y-4"
-        >
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700">
               分类名称
             </label>
             <input
               type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              name="name"
+              value={modalState.formData.name}
+              onChange={handleInputChange}
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
               required
             />
@@ -243,8 +325,9 @@ export default function CategoryManagement() {
               描述
             </label>
             <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              name="description"
+              value={modalState.formData.description}
+              onChange={handleInputChange}
               rows={3}
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
             />
@@ -255,8 +338,9 @@ export default function CategoryManagement() {
               父分类
             </label>
             <select
-              value={parentId}
-              onChange={(e) => setParentId(e.target.value)}
+              name="parent_id"
+              value={modalState.formData.parent_id}
+              onChange={handleInputChange}
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
             >
               <option value="">无</option>
@@ -264,7 +348,7 @@ export default function CategoryManagement() {
                 <option
                   key={category.id}
                   value={category.id}
-                  disabled={category.id === editingCategory?.id}
+                  disabled={category.id === modalState.editingCategory?.id}
                 >
                   {category.name}
                 </option>
@@ -277,12 +361,23 @@ export default function CategoryManagement() {
               type="submit"
               className="inline-flex w-full justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 sm:col-start-2"
             >
-              {editingCategory ? '更新' : '添加'}
+              {modalState.editingCategory ? '更新' : '添加'}
             </button>
             <button
               type="button"
               className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:col-start-1 sm:mt-0"
-              onClick={resetForm}
+              onClick={() => {
+                setModalState(prev => ({
+                  ...prev,
+                  isOpen: false,
+                  editingCategory: null,
+                  formData: {
+                    name: '',
+                    description: '',
+                    parent_id: '',
+                  },
+                }));
+              }}
             >
               取消
             </button>
