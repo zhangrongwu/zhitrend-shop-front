@@ -1,4 +1,4 @@
-import { createBrowserRouter, Outlet } from 'react-router-dom';
+import { createBrowserRouter, Outlet, useRouteError } from 'react-router-dom';
 import { AuthProvider } from '../contexts/AuthContext';
 import Layout from '../layouts/Layout';
 import AdminLayout from '../layouts/AdminLayout';
@@ -25,10 +25,22 @@ import Settings from '../pages/Admin/Settings';
 import ErrorBoundary from '../components/ErrorBoundary';
 import Categories from '../pages/Categories';
 
+const RootErrorBoundary = () => {
+  const error = useRouteError() as Error;
+  return (
+    <ErrorBoundary>
+      <div>
+        <h1>出错了</h1>
+        <p>{error.message}</p>
+      </div>
+    </ErrorBoundary>
+  );
+};
+
 export const router = createBrowserRouter([
   {
     element: <AuthProvider />,
-    errorElement: <ErrorBoundary />,
+    errorElement: <RootErrorBoundary />,
     children: [
       {
         path: '/',
