@@ -16,15 +16,18 @@ export default function Navbar() {
               <Link to="/products" className="text-gray-700 hover:text-gray-900">
                 商品
               </Link>
-              <Link to="/categories" className="text-gray-700 hover:text-gray-900">
-                分类
-              </Link>
             </div>
           </div>
 
           <div className="flex items-center space-x-4">
             {user ? (
               <>
+                <Link to="/cart" className="text-gray-700 hover:text-gray-900">
+                  购物车
+                </Link>
+                <Link to="/orders" className="text-gray-700 hover:text-gray-900">
+                  订单
+                </Link>
                 {isAdmin() && (
                   <Link
                     to="/admin/products"
@@ -33,12 +36,6 @@ export default function Navbar() {
                     管理后台
                   </Link>
                 )}
-                <Link to="/cart" className="text-gray-700 hover:text-gray-900">
-                  购物车
-                </Link>
-                <Link to="/orders" className="text-gray-700 hover:text-gray-900">
-                  订单
-                </Link>
                 <div className="relative group">
                   <button className="text-gray-700 hover:text-gray-900">
                     {user.email}

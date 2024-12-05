@@ -11,6 +11,7 @@ import Profile from '../pages/Profile';
 import Login from '../pages/Login';
 import Register from '../pages/Register';
 import About from '../pages/About';
+import PaymentResult from '../pages/PaymentResult';
 
 // Admin pages
 import Dashboard from '../pages/Admin/Dashboard';
@@ -22,6 +23,7 @@ import CategoryManagement from '../pages/Admin/CategoryManagement';
 import Settings from '../pages/Admin/Settings';
 
 import ErrorBoundary from '../components/ErrorBoundary';
+import Categories from '../pages/Categories';
 
 export const router = createBrowserRouter([
   {
@@ -41,6 +43,9 @@ export const router = createBrowserRouter([
           { path: '/login', element: <Login /> },
           { path: '/register', element: <Register /> },
           { path: '/about', element: <About /> },
+          { path: '/orders/:orderId/success', element: <PaymentResult status="success" /> },
+          { path: '/orders/:orderId/cancel', element: <PaymentResult status="cancel" /> },
+          { path: '/categories', element: <Categories /> },
         ],
       },
       {

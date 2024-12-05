@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useState } from 'react';
 import { useCartStore } from '../stores';
 import Alert from '../components/Alert';
@@ -15,6 +15,9 @@ interface Product {
 export default function Products() {
   const [alert, setAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const addToCart = useCartStore(state => state.addItem);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [categories, setCategories] = useState([]);
+  const selectedCategory = searchParams.get('category');
 
   const { data: products, isLoading } = useQuery<Product[]>({
     queryKey: ['products'],
@@ -61,6 +64,21 @@ export default function Products() {
           message={alert?.message || ''}
           onClose={() => setAlert(null)}
         />
+
+        <div className="mb-6">
+          <select 
+            value={selectedCategory || ''} 
+            onChange={e => setSearchParams({ category: e.target.value })}
+            className="border rounded p-2"
+          >
+            <option value="">所有分类</option>
+            {categories.map(category => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
+            ))}
+          </select>
+        </div>
 
         <div className="mt-6 grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-4 xl:gap-x-8">
           {products?.map((product) => (
